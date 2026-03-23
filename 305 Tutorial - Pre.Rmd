@@ -1,0 +1,1127 @@
+---
+title: 'Regression Analysis in Outcomes Research: A Practical Workshop'
+subtitle: "**Student Follow-Along Version**"
+author: "Outcomes Research Course"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: flatly
+    highlight: tango
+    code_folding: show
+  pdf_document:
+    toc: true
+    toc_depth: '3'
+
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 8,
+  fig.height = 6
+)
+
+# Load required packages
+library(tidyverse)
+library(broom)
+library(knitr)
+library(DiagrammeR)
+library(gridExtra)
+library(forcats)
+
+# Set seed for reproducibility
+set.seed(42)
+```
+
+## Learning Objectives
+
+By the end of this workshop, you will be able to:
+
+1.  Identify exposure (X) and outcome (Y) variables in research
+    questions
+2.  Understand the role of confounders in causal relationships
+3.  Prepare and explore data for regression analysis
+4.  Construct and interpret regression models in R
+5.  Interpret both continuous and categorical predictors across linear,
+    logistic, and Poisson regression
+6.  Communicate statistical findings effectively
+7.  Recognize common biases and limitations in regression analysis
+
+------------------------------------------------------------------------
+
+# Part 1: Conceptual Foundation
+
+## 1.1 Understanding Relationships Between Variables
+
+### The Research Question Framework
+
+In outcomes research, we often ask: **"Does X affect Y?"**
+
+-   **Y (Outcome):** The dependent variable we want to understand or
+    predict
+-   **X (Exposure/Predictor):** The independent variable(s) that may
+    influence Y
+-   **Confounders:** Variables that affect both X and Y, potentially
+    distorting the relationship
+
+### Example Research Question
+
+> **Does physical activity (X) improve sleep quality (Y)?**
+
+```{r concept-diagram, echo=FALSE, fig.height=4}
+grViz("
+digraph causal_diagram {
+  graph [rankdir = LR, bgcolor = transparent]
+  node [shape = box, style = filled, fillcolor = lightblue]
+
+  PhysicalActivity [fillcolor = lightgreen, label = 'Physical Activity\n(X)']
+  SleepQuality [fillcolor = salmon, label = 'Sleep Quality\n(Y)']
+  Age [fillcolor = lightyellow]
+  Stress [fillcolor = lightyellow]
+
+  PhysicalActivity -> SleepQuality [label = '  Causal effect?', color = red, penwidth = 2]
+  Age -> PhysicalActivity [label = ' ']
+  Age -> SleepQuality [label = ' ']
+  Stress -> PhysicalActivity [label = ' ']
+  Stress -> SleepQuality [label = ' ']
+
+  {rank = same; Age; Stress}
+}
+", height = 300)
+```
+
+### Key Concept: Confounding
+
+A **confounder** is a variable that is associated with both the exposure
+(X) and outcome (Y), but is NOT on the causal pathway between them.
+
+Without adjusting for confounders, we might mistake correlation for
+causation. For example, people with higher stress might exercise less
+AND have poorer sleep quality, regardless of the true effect of physical
+activity on sleep.
+
+------------------------------------------------------------------------
+
+## 1.2 Null and Alternative Hypotheses
+
+Before analyzing data, we formulate **hypotheses** about the
+relationship between X and Y.
+
+### The Null Hypothesis (H₀)
+
+The **null hypothesis** states there is **no effect** or **no
+relationship**:
+
+> H₀: Physical activity has no effect on sleep quality (β₁ = 0)
+
+This is the "skeptic's position" — we assume no effect until the data
+convinces us otherwise.
+
+### The Alternative Hypothesis (H₁ or Hₐ)
+
+The **alternative hypothesis** states there **is an effect**:
+
+> H₁: Physical activity affects sleep quality (β₁ ≠ 0)
+
+This can be:
+
+-   **Two-sided:** Effect could be positive OR negative (β₁ ≠ 0)
+-   **One-sided:** Effect is in a specific direction (β₁ < 0 or β₁ > 0)
+
+### How Regression Tests Hypotheses
+
+When we run a regression, R automatically tests:
+
+| What we test | Null Hypothesis | What p-value tells us |
+|------------------------|------------------------|------------------------|
+| Each coefficient | β = 0 (no effect) | Probability of seeing this result if H₀ is true |
+
+-   **p < 0.05:** Reject H₀ → Evidence of an effect (statistically
+    significant)
+-   **p ≥ 0.05:** Fail to reject H₀ → Insufficient evidence of an effect
+
+### Important Caveats
+
+-   **Statistical significance ≠ practical significance** — A 0.01 point
+    increase in sleep quality might be statistically significant but not
+    meaningful
+-   **Failing to reject H₀ ≠ proving no effect** — It may mean we lack
+    power to detect it
+-   **p-values don't tell us effect size** — Always report confidence
+    intervals
+
+------------------------------------------------------------------------
+
+## 1.3 The Regression Equation
+
+Regression allows us to model the relationship between X and Y while
+adjusting for confounders.
+
+### The Regression Equation
+
+**Simple regression:** $Y = \beta_0 + \beta_1X + \epsilon$
+
+**Multiple regression:**
+$Y = \beta_0 + \beta_1X_1 + \beta_2X_2 + ... + \beta_kX_k + \epsilon$
+
+Multiple regression allows us to adjust for confounders by including
+them in the model.
+
+------------------------------------------------------------------------
+
+# Part 2: Data Exploration & Preparation
+
+## 2.1 Dataset Introduction
+
+We will use the **Sleep Health and Lifestyle Dataset**, which comprises
+400 rows and 13 columns covering a wide range of variables related to
+sleep and daily habits.
+
+**Key Features:**
+
+-   **Comprehensive Sleep Metrics:** Sleep duration, quality of sleep,
+    and sleep disorders
+-   **Lifestyle Factors:** Physical activity levels, stress levels, and
+    BMI categories
+-   **Cardiovascular Health:** Blood pressure and heart rate
+    measurements
+-   **Demographics:** Sex, age, and occupation
+
+**Research Question:** Does physical activity level affect quality of
+sleep?
+
+-   **Outcome (Y):** Quality of Sleep (1-10 scale)
+-   **Exposure (X):** Physical Activity Level (minutes/day)
+-   **Potential Confounders:** Age, sex, stress level, BMI category
+
+## 2.2 Load and Prepare Dataset
+
+```{r load-data}
+# Load the dataset
+data <- read_csv("Sleep_health_and_lifestyle_dataset (1).csv")
+
+# Clean column names and prepare variables
+# TODO: Rename columns to shorter, code-friendly names
+# Hint: new_name = `Old Column Name`
+data <- data %>%
+  rename(
+    person_id = `Person ID`,
+    sleep_duration = ___,
+    quality_of_sleep = ___,
+    physical_activity = ___,
+    stress_level = ___,
+    bmi_category = `BMI Category`,
+    blood_pressure = `Blood Pressure`,
+    heart_rate = `Heart Rate`,
+    daily_steps = `Daily Steps`,
+    sleep_disorder = `Sleep Disorder`,
+    # The dataset records biological sex (Male/Female), so we use Sex
+    Sex = Gender
+  ) %>%
+  mutate(
+    # Clean up BMI category: merge "Normal" and "Normal Weight"
+    bmi_category = str_trim(bmi_category),
+    bmi_category = case_when(
+      bmi_category %in% c("Normal", "Normal Weight") ~ "Normal Weight",
+      TRUE ~ bmi_category
+    ),
+    # TODO: Set reference categories for factor variables
+    # Hint: fct_relevel(factor(variable), "Reference Level")
+    Sex = fct_relevel(factor(Sex), ___),
+    bmi_category = fct_relevel(factor(bmi_category), ___),
+    sleep_disorder = fct_relevel(factor(sleep_disorder), ___),
+    Occupation = factor(Occupation),
+    # TODO: Create a binary high_activity variable (1 if >= 60 min, 0 otherwise)
+    # Hint: ifelse(condition, value_if_true, value_if_false)
+    high_activity = ifelse(___, 1, 0),
+    high_activity_label = factor(
+      ifelse(high_activity == 1, "High Activity", "Low Activity"),
+      levels = c("Low Activity", "High Activity")
+    ),
+    age_group = cut(
+      Age,
+      breaks = c(0, 35, 45, 55, 100),
+      labels = c("<35", "35-45", "46-55", ">55")
+    )
+  )
+
+# Confirm the reference categories used in the workshop
+levels(data$Sex)
+levels(data$bmi_category)
+levels(data$sleep_disorder)
+
+# Preview the data
+head(data) %>%
+  select(person_id, Age, Sex, physical_activity, stress_level, quality_of_sleep)
+```
+
+### Why Reference Categories Matter
+
+For categorical variables, regression coefficients are always interpreted
+**relative to a reference category**. In this workshop, we explicitly set
+the following reference categories:
+
+-   `Sex`: **Female**
+-   `bmi_category`: **Normal Weight**
+-   `sleep_disorder`: **None**
+
+This makes the model output easier to interpret than relying on the
+default alphabetical ordering.
+
+## 2.3 Exploratory Data Analysis
+
+```{r summary-stats}
+# TODO: Select the key numeric variables and display summary statistics
+# Hint: select(var1, var2, ...) %>% summary()
+data %>%
+  select(___, ___, ___, ___, ___) %>%
+  summary()
+```
+
+```{r exploratory-plots, fig.height=10}
+# 1. Distribution of outcome (quality of sleep)
+# TODO: Fill in the variable for the x-axis and choose the right geom
+# Hint: geom_histogram() for distributions
+p1 <- ggplot(data, aes(x = ___)) +
+  geom_histogram(bins = 10, fill = "steelblue", alpha = 0.7) +
+  labs(
+    title = "Distribution of Sleep Quality",
+    x = "Quality of Sleep (1-10)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+# 2. Sleep quality by activity level (crude comparison)
+# TODO: Fill in x, y, and fill aesthetics; choose the right geom
+# Hint: geom_boxplot() for comparing groups
+p2 <- ggplot(data, aes(
+  x = ___,
+  y = ___,
+  fill = high_activity_label
+)) +
+  geom_boxplot(alpha = 0.7) +
+  labs(
+    title = "Sleep Quality by Physical Activity Level (Crude Comparison)",
+    x = "Activity Level",
+    y = "Quality of Sleep (1-10)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  scale_fill_brewer(palette = "Set2")
+
+# 3. Relationship between physical activity and sleep quality
+# TODO: Fill in x, y, and color aesthetics for a scatterplot
+# Hint: geom_point() for scatterplots, geom_smooth(method = "lm") for trend lines
+p3 <- ggplot(data, aes(x = ___, y = ___, color = ___)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "Physical Activity vs. Sleep Quality (by Sex)",
+    x = "Physical Activity (min/day)",
+    y = "Quality of Sleep (1-10)",
+    color = "Sex"
+  ) +
+  theme_minimal() +
+  scale_color_brewer(palette = "Set1")
+
+# 4. Stress level distribution by activity level
+p4 <- ggplot(data, aes(x = factor(stress_level), fill = high_activity_label)) +
+  geom_bar(position = "fill") +
+  labs(
+    title = "Stress Level Distribution by Activity Level",
+    x = "Stress Level (1-10)",
+    y = "Proportion",
+    fill = "Activity Level"
+  ) +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set2") +
+  scale_y_continuous(labels = scales::percent)
+
+# Display all plots
+grid.arrange(p1, p2, p3, p4, ncol = 2)
+```
+
+### Discussion Question
+
+Look at the plots above. What do you observe about the relationship
+between physical activity and sleep quality? Why might a simple
+comparison be misleading?
+
+------------------------------------------------------------------------
+
+# Part 3: Building Regression Models
+
+## 3.1 Simple Comparison (Crude Analysis)
+
+First, let's look at the unadjusted difference in means.
+
+```{r crude-comparison}
+# Calculate mean difference
+mean_diff <- data %>%
+  group_by(high_activity_label) %>%
+  summarise(mean_sleep_quality = mean(quality_of_sleep), .groups = "drop") %>%
+  pivot_wider(
+    names_from = high_activity_label,
+    values_from = mean_sleep_quality
+  ) %>%
+  mutate(difference = `High Activity` - `Low Activity`)
+
+print(mean_diff)
+```
+
+The crude analysis shows people with high physical activity have better
+sleep quality. But is this the true effect or could there be
+confounding?
+
+------------------------------------------------------------------------
+
+## 3.2 Simple Linear Regression
+
+Now let's use regression to estimate the effect.
+
+```{r simple-regression}
+# TODO: Fit a simple linear regression predicting quality_of_sleep
+#       from physical_activity
+# Hint: lm(outcome ~ predictor, data = data)
+
+model_simple <- lm(___ ~ ___, data = data)
+
+# Display results
+summary(model_simple)
+
+# Tidy format
+tidy_simple <- tidy(model_simple, conf.int = TRUE) %>%
+  mutate(across(where(is.numeric), ~ round(., 3)))
+
+print(tidy_simple)
+```
+
+**Key outputs:**
+
+-   **Coefficient:** Estimated effect on sleep quality per minute of
+    physical activity
+-   **95% CI:** Range of plausible values
+-   **p-value:** Statistical significance
+
+### Sleep Quality by Sex
+
+Let's also examine the relationship between sex and sleep quality.
+
+```{r sex-sleep-quality}
+# Compare sleep quality by sex
+data %>%
+  group_by(Sex) %>%
+  summarise(
+    n = n(),
+    mean_quality = mean(quality_of_sleep),
+    sd_quality = sd(quality_of_sleep),
+    .groups = "drop"
+  )
+
+# TODO: Fit a simple regression with Sex as the predictor for quality_of_sleep
+# Hint: lm(outcome ~ predictor, data = data)
+
+model_sex <- lm(___ ~ ___, data = data)
+
+summary(model_sex)
+```
+
+**Interpretation:** The coefficient for `SexMale` tells us the average
+difference in sleep quality between males and females. Because Female is
+the reference category, `SexMale` is interpreted as:
+
+> average sleep quality among males minus average sleep quality among
+> females
+
+This idea will carry forward when we interpret categorical variables in
+multiple linear, logistic, and Poisson regression.
+
+------------------------------------------------------------------------
+
+## 3.3 Multiple Linear Regression (Adjusting for Confounders)
+
+Now let's adjust for confounders to get a better estimate of the effect.
+
+```{r multiple-regression}
+# TODO: Fit a multiple regression model predicting quality_of_sleep from:
+#       physical_activity, Age, Sex, stress_level, and bmi_category
+# Hint: lm(outcome ~ x1 + x2 + x3 + ..., data = data)
+
+model_adjusted <- lm(
+  ___ ~ ___ + ___ + ___ + ___ + ___,
+  data = data
+)
+
+# Display results
+summary(model_adjusted)
+
+# Tidy format
+tidy_adjusted <- tidy(model_adjusted, conf.int = TRUE) %>%
+  mutate(across(where(is.numeric), ~ round(., 3)))
+
+print(tidy_adjusted)
+```
+
+**Interpreting coefficients:**
+
+-   **Continuous variables** (e.g., `physical_activity`, `Age`,
+    `stress_level`):
+    Each coefficient represents the expected change in sleep quality for
+    a 1-unit increase in that predictor, **holding all other variables
+    constant**.
+
+-   **Binary categorical variables** (e.g., `Sex`):
+    The coefficient compares the mean outcome for one category versus
+    the reference category.
+
+    -   `SexMale`: the average difference in sleep quality for males
+        compared with females, adjusting for the other covariates
+
+-   **Multi-level categorical variables** (e.g., `bmi_category`):
+    Each coefficient compares one category to the chosen reference
+    group.
+
+    -   `bmi_categoryOverweight`: the average difference in sleep
+        quality for overweight individuals compared with those of normal
+        weight
+    -   `bmi_categoryObese`: the average difference in sleep quality for
+        individuals with obesity compared with those of normal weight
+
+For example, if the coefficient for `SexMale` were -0.40, we would say:
+
+> After adjusting for physical activity, age, stress level, and BMI
+> category, males had an average sleep quality score that was 0.40
+> points lower than females.
+
+If the coefficient for `bmi_categoryObese` were -1.10, we would say:
+
+> After adjustment, individuals with obesity had an average sleep
+> quality score 1.10 points lower than individuals with normal weight.
+
+------------------------------------------------------------------------
+
+## 3.4 Interpreting Categorical Predictors Across Regression Models
+
+Many predictors in outcomes research are **categorical**, such as sex,
+BMI category, occupation, or disease status.
+
+### Reference categories
+
+When a categorical variable is included in a regression model, R creates
+indicator variables and compares each category to a **reference
+category**.
+
+For example, if `Sex` has two categories:
+
+-   **Female** = reference category
+-   `SexMale` = comparison category
+
+then the coefficient for `SexMale` tells us how males differ from
+females, **holding all other variables constant**.
+
+For variables with more than two categories, such as `bmi_category`, R
+creates one coefficient for each non-reference level:
+
+-   `bmi_categoryOverweight`: compares overweight to normal weight
+-   `bmi_categoryObese`: compares obesity to normal weight
+
+### General interpretation rule
+
+-   **Linear regression:** coefficient = difference in the **mean
+    outcome** compared with the reference group
+-   **Logistic regression:** exp(coefficient) = **odds ratio** compared
+    with the reference group
+-   **Poisson regression:** exp(coefficient) = **rate ratio** or
+    **incidence rate ratio (IRR)** compared with the reference group
+
+### Template language
+
+For a categorical predictor, you can usually write:
+
+-   **Linear:** "Compared with [reference], those in [category] had an
+    average outcome that was β units higher/lower."
+-   **Logistic:** "Compared with [reference], those in [category] had OR
+    times the odds of the outcome."
+-   **Poisson:** "Compared with [reference], those in [category] had IRR
+    times the expected count/rate of the outcome."
+
+> **Important:** For a categorical variable with several levels (such as
+> BMI category or occupation), each coefficient compares one level with
+> the reference group. You can also test the variable **overall** to ask
+> whether the categories differ as a whole.
+
+------------------------------------------------------------------------
+
+## 3.5 Comparing Models
+
+```{r compare-models, fig.height=5}
+# Compare coefficient estimates
+comparison <- bind_rows(
+  tidy_simple %>%
+    filter(term == "physical_activity") %>%
+    mutate(Model = "Unadjusted"),
+  tidy_adjusted %>%
+    filter(term == "physical_activity") %>%
+    mutate(Model = "Adjusted")
+) %>%
+  select(Model, estimate, conf.low, conf.high, p.value)
+
+print(comparison)
+
+# Visualize the comparison
+ggplot(comparison, aes(x = Model, y = estimate, color = Model)) +
+  geom_point(size = 4) +
+  geom_errorbar(
+    aes(ymin = conf.low, ymax = conf.high),
+    width = 0.2,
+    linewidth = 1
+  ) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(
+    title = "Effect of Physical Activity on Sleep Quality",
+    subtitle = "Comparing unadjusted vs. adjusted estimates",
+    y = "Change in Sleep Quality (per min of activity)",
+    x = ""
+  ) +
+  theme_minimal() +
+  scale_color_brewer(palette = "Set1") +
+  theme(legend.position = "none")
+```
+
+### Critical Insight
+
+**Unadjusted:** Each additional minute of physical activity is
+associated with a `r round(comparison$estimate[1], 3)` point increase in
+sleep quality.
+
+**Adjusted:** After controlling for age, sex, stress, and BMI, each
+additional minute of physical activity is associated with a
+`r round(comparison$estimate[2], 3)` point increase in sleep quality.
+
+Adjusting for confounders helps isolate the effect of physical activity.
+
+------------------------------------------------------------------------
+
+## 3.6 Beyond Linear Regression: Logistic and Poisson
+
+Linear regression works for **continuous outcomes**. For other outcome
+types, we use different regression models:
+
+| Outcome Type | Example | Regression Type | R Function |
+|------------------|------------------|------------------|------------------|
+| Continuous | Sleep quality score | Linear | `lm()` |
+| Binary (Yes/No) | Sleep disorder | Logistic | `glm(..., family = binomial)` |
+| Count | Daily steps (thousands) | Poisson | `glm(..., family = poisson)` |
+
+### Logistic Regression (Binary Outcomes)
+
+```{r logistic-example}
+# Create a binary outcome: Does the person have a sleep disorder?
+data <- data %>%
+  mutate(has_disorder = ifelse(sleep_disorder != "None", 1, 0))
+
+# TODO: Fit a logistic regression predicting has_disorder from:
+#       physical_activity, Age, Sex, stress_level, and bmi_category
+# Hint: glm(outcome ~ predictors, data = data, family = binomial)
+
+model_logistic <- glm(
+  ___ ~ ___ + ___ + ___ + ___ + ___,
+  data = data,
+  family = ___
+)
+
+# View results - coefficients are log-odds
+tidy(model_logistic, conf.int = TRUE) %>%
+  mutate(across(where(is.numeric), ~ round(., 3)))
+```
+
+**Exponentiate to get Odds Ratios:**
+
+```{r logistic-or}
+# TODO: Use tidy() with exponentiate = TRUE to get Odds Ratios
+# Hint: tidy(model, conf.int = TRUE, exponentiate = TRUE)
+
+logistic_or <- tidy(model_logistic, conf.int = ___, exponentiate = ___) %>%
+  mutate(across(where(is.numeric), ~ round(., 2))) %>%
+  select(term, OR = estimate, conf.low, conf.high, p.value)
+
+print(logistic_or)
+```
+
+**Interpreting categorical variables in logistic regression:**
+
+After exponentiating the coefficients, categorical predictors are
+interpreted as **odds ratios relative to the reference category**.
+
+-   `SexMale`: the odds ratio comparing males with females
+-   `bmi_categoryOverweight`: the odds ratio comparing overweight
+    individuals with those of normal weight
+-   `bmi_categoryObese`: the odds ratio comparing individuals with
+    obesity with those of normal weight
+
+For example:
+
+-   If `SexMale` has OR = 1.40, males have **1.40 times the odds** of a
+    sleep disorder compared with females, adjusting for the other
+    variables.
+-   If `bmi_categoryObese` has OR = 2.10, individuals with obesity have
+    **2.10 times the odds** of a sleep disorder compared with those of
+    normal weight.
+
+An OR greater than 1 indicates **higher odds** than the reference group;
+an OR less than 1 indicates **lower odds**.
+
+**Continuous predictor reminder:** An OR of
+`r round(exp(coef(model_logistic)["physical_activity"]), 2)` for
+physical activity means that for each additional minute of daily
+physical activity, the odds of having a sleep disorder change by a
+factor of `r round(exp(coef(model_logistic)["physical_activity"]), 2)`,
+adjusting for age, sex, stress level, and BMI category.
+
+### Poisson Regression (Count Outcomes)
+
+```{r poisson-example}
+# Use daily steps as a count-like outcome (scaled to thousands)
+data <- data %>%
+  mutate(steps_thousands = round(daily_steps / 1000))
+
+# TODO: Fit a Poisson regression predicting steps_thousands from:
+#       physical_activity, Age, Sex, stress_level, and bmi_category
+# Hint: glm(outcome ~ predictors, data = data, family = poisson)
+
+model_poisson <- glm(
+  ___ ~ ___ + ___ + ___ + ___ + ___,
+  data = data,
+  family = ___
+)
+
+# TODO: Exponentiate to get incidence rate ratios (IRR)
+# Hint: tidy(model, conf.int = TRUE, exponentiate = TRUE)
+
+poisson_irr <- tidy(model_poisson, conf.int = ___, exponentiate = ___) %>%
+  mutate(across(where(is.numeric), ~ round(., 2))) %>%
+  select(term, IRR = estimate, conf.low, conf.high, p.value)
+
+print(poisson_irr)
+```
+
+**Interpreting categorical variables in Poisson regression:**
+
+After exponentiating the coefficients, categorical predictors are
+interpreted as **rate ratios** or **incidence rate ratios (IRRs)**
+relative to the reference category.
+
+-   `SexMale`: the expected step count for males relative to females
+-   `bmi_categoryOverweight`: the expected step count for overweight
+    individuals relative to those of normal weight
+-   `bmi_categoryObese`: the expected step count for individuals with
+    obesity relative to those of normal weight
+
+For example:
+
+-   If `SexMale` has IRR = 1.12, males have an expected daily step count
+    that is **12% higher** than females, adjusting for the other
+    covariates.
+-   If `bmi_categoryObese` has IRR = 0.88, individuals with obesity have
+    an expected daily step count that is **12% lower** than those of
+    normal weight.
+
+An IRR above 1 means a **higher expected count/rate** than the reference
+group; an IRR below 1 means a **lower expected count/rate**.
+
+**Continuous predictor reminder:** An IRR of
+`r round(exp(coef(model_poisson)["physical_activity"]), 2)` for
+physical activity means each additional minute of physical activity is
+associated with a
+`r round((exp(coef(model_poisson)["physical_activity"]) - 1) * 100, 1)`%
+change in the expected daily step count.
+
+### Quick Comparison: Interpreting Categorical Predictors Across Models
+
+| Model type | Example coefficient | What it compares | Interpretation |
+|------------------|------------------|------------------|------------------|
+| Linear | `SexMale = -0.40` | Male vs Female | Males have an average sleep quality score 0.40 points lower than females |
+| Logistic | `exp(SexMale) = 1.40` | Male vs Female | Males have 1.40 times the odds of sleep disorder compared with females |
+| Poisson | `exp(SexMale) = 1.12` | Male vs Female | Males have an expected step count 12% higher than females |
+| Linear | `bmi_categoryObese = -1.10` | Obese vs Normal Weight | Individuals with obesity have average sleep quality 1.10 points lower |
+| Logistic | `exp(bmi_categoryObese) = 2.10` | Obese vs Normal Weight | Individuals with obesity have 2.10 times the odds of sleep disorder |
+| Poisson | `exp(bmi_categoryObese) = 0.88` | Obese vs Normal Weight | Individuals with obesity have an expected step count 12% lower |
+
+### Key Takeaway
+
+-   **Linear:** coefficient = change in Y for 1-unit change in X; for
+    categorical predictors, the coefficient is a difference in mean
+    outcome vs the reference group
+-   **Logistic:** exp(coefficient) = **Odds Ratio**; for categorical
+    predictors, the OR compares each category with the reference group
+-   **Poisson:** exp(coefficient) = **Rate Ratio / IRR**; for
+    categorical predictors, the IRR compares each category with the
+    reference group
+
+> **Quick rule:** Always identify the **reference category first** before
+> interpreting any categorical coefficient.
+
+> **Note:** In practice, we also assess goodness of fit (R², AIC/BIC)
+> and check model assumptions (linearity, normality of residuals,
+> homoscedasticity, and appropriate mean-variance structure) before
+> finalizing our conclusions.
+
+------------------------------------------------------------------------
+
+# Part 4: Communicating Results
+
+## 4.1 Publication-Ready Tables
+
+```{r publication-table}
+# TODO: Create a professional results table from tidy_adjusted
+# Steps:
+#   1. Add a "95% CI" column by pasting conf.low and conf.high
+#   2. Add a "Variable" column with readable names using case_when()
+#   3. Select the columns: Variable, Coefficient, 95% CI, p-value
+
+results_table <- tidy_adjusted %>%
+  mutate(
+    `95% CI` = paste0(
+      "(",
+      sprintf("%.3f", conf.low),
+      " to ",
+      sprintf("%.3f", conf.high),
+      ")"
+    ),
+    Variable = case_when(
+      term == "(Intercept)" ~ "Intercept",
+      term == "physical_activity" ~ "Physical Activity (per min/day)",
+      term == "Age" ~ "Age (per year)",
+      term == "SexMale" ~ "Sex: Male (vs Female)",
+      term == "stress_level" ~ "Stress Level (per unit)",
+      term == "bmi_categoryOverweight" ~ "BMI: Overweight (vs Normal Weight)",
+      term == "bmi_categoryObese" ~ "BMI: Obese (vs Normal Weight)",
+      TRUE ~ term
+    )
+  ) %>%
+  select(Variable, Coefficient = estimate, `95% CI`, `p-value` = p.value)
+
+kable(
+  results_table,
+  caption = "Table 1. Multiple Linear Regression Results: Predictors of Sleep Quality",
+  digits = 3
+)
+```
+
+## 4.2 Writing Results
+
+**Fill in the blanks** using the output from your adjusted model above:
+
+"After adjusting for age, sex, stress level, and BMI category, physical
+activity was associated with a **\_\_\_\_\_\_**
+point increase in sleep quality per additional minute of daily activity
+(95% CI: **\_\_\_\_\_\_** to **\_\_\_\_\_\_**,
+p < **\_\_\_\_\_\_**)."
+
+If you want to describe a categorical predictor, use the same logic but
+reference the comparison group. For example:
+
+"After adjustment, males had a sleep quality score of **\_\_\_\_\_\_**
+points different from females (95% CI: **\_\_\_\_\_\_** to **\_\_\_\_\_\_**),
+holding physical activity, age, stress level, and BMI category
+constant."
+
+------------------------------------------------------------------------
+
+# Part 5: Hands-On Practice
+
+## 5.1 Practice Exercise
+
+**New Research Question:** Does stress level affect sleep duration?
+
+Using the same Sleep Health and Lifestyle dataset, explore a different
+relationship:
+
+-   **Outcome (Y):** Sleep Duration (hours)
+-   **Exposure (X):** Stress Level (1-10 scale)
+-   **Potential Confounders:** Age, physical activity, occupation
+
+```{r practice-data}
+# Preview relevant variables for practice
+head(data, 10) %>%
+  select(person_id, Age, Occupation, sleep_duration, stress_level, physical_activity)
+```
+
+------------------------------------------------------------------------
+
+## 5.2 Your Tasks
+
+### Step 1: Explore the Data
+
+```{r practice-step1, eval=FALSE}
+# YOUR CODE HERE
+
+# 1. Calculate summary statistics for sleep duration by stress level groups
+#    Hint: Create stress categories (low: 1-3, medium: 4-6, high: 7-10)
+
+# 2. Create visualizations:
+#    - Distribution of sleep duration
+#    - Sleep duration by stress level (scatterplot)
+#    - Box plot of sleep duration by stress categories
+
+# 3. Explore potential confounders:
+#    How do Age, physical activity, and Occupation relate to stress?
+```
+
+**Hints:** Use `summary()`, `group_by()`, `ggplot()`, and think about
+whether any categorical predictors (such as `Occupation`) need a
+reference group for interpretation.
+
+------------------------------------------------------------------------
+
+### Step 2: Fit Regression Models
+
+```{r practice-step2, eval=FALSE}
+# YOUR CODE HERE
+
+# 1. Fit a simple regression: sleep_duration ~ stress_level
+
+# 2. Fit a multiple regression adjusting for potential confounders
+#    Consider including: Age, physical_activity, Occupation
+
+# 3. Compare the stress_level coefficients between models
+
+# 4. If you include Occupation, identify the reference category and
+#    explain how you would interpret one Occupation coefficient
+```
+
+**Hints:** Use `lm()` and `tidy()`. If you include a categorical
+variable, remember that each coefficient compares one level with the
+reference category.
+
+------------------------------------------------------------------------
+
+### Step 3: Interpret Results
+
+```{r practice-step3, eval=FALSE}
+# YOUR CODE HERE
+
+# 1. Create a comparison table of unadjusted vs adjusted estimates for stress_level
+
+# 2. Visualize the effect estimates with confidence intervals
+
+# 3. Write a one-sentence interpretation of your findings
+
+# 4. Optional:
+#    Write one sentence interpreting an Occupation coefficient
+```
+
+**Answer:** What's the crude vs. adjusted effect of stress on sleep
+duration? Did confounding matter? What are the limitations?
+
+------------------------------------------------------------------------
+
+## 5.3 Solution (Reveal After Attempting)
+
+<details>
+
+<summary>**Click to reveal solution**</summary>
+
+```{r practice-solution, class.source = 'fold-show'}
+# STEP 1: Explore the data
+
+# Create stress categories
+data <- data %>%
+  mutate(stress_category = case_when(
+    stress_level <= 3 ~ "Low (1-3)",
+    stress_level <= 6 ~ "Medium (4-6)",
+    TRUE ~ "High (7-10)"
+  ))
+
+# Set a reference category for Occupation if desired
+data <- data %>%
+  mutate(Occupation = fct_relevel(Occupation, levels(Occupation)[1]))
+
+# Summary statistics
+data %>%
+  group_by(stress_category) %>%
+  summarise(
+    n = n(),
+    mean_sleep = mean(sleep_duration),
+    sd_sleep = sd(sleep_duration),
+    mean_age = mean(Age),
+    mean_activity = mean(physical_activity),
+    .groups = "drop"
+  )
+
+# Visualizations
+p1 <- ggplot(data, aes(x = sleep_duration)) +
+  geom_histogram(bins = 20, fill = "steelblue", alpha = 0.7) +
+  labs(
+    title = "Distribution of Sleep Duration",
+    x = "Sleep Duration (hours)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+p2 <- ggplot(data, aes(x = stress_level, y = sleep_duration)) +
+  geom_point(alpha = 0.5, color = "steelblue") +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(
+    title = "Sleep Duration vs Stress Level",
+    x = "Stress Level",
+    y = "Sleep Duration (hours)"
+  ) +
+  theme_minimal()
+
+grid.arrange(p1, p2, ncol = 2)
+
+# STEP 2: Fit regression models
+
+# Simple model
+model_practice_simple <- lm(sleep_duration ~ stress_level, data = data)
+tidy(model_practice_simple, conf.int = TRUE) %>%
+  mutate(across(where(is.numeric), ~ round(., 3)))
+
+# Adjusted model with a categorical covariate
+model_practice_adjusted <- lm(
+  sleep_duration ~ stress_level + Age + physical_activity + Occupation,
+  data = data
+)
+tidy(model_practice_adjusted, conf.int = TRUE) %>%
+  mutate(across(where(is.numeric), ~ round(., 3)))
+
+# STEP 3: Compare and visualize
+
+comparison_practice <- bind_rows(
+  tidy(model_practice_simple, conf.int = TRUE) %>%
+    filter(term == "stress_level") %>%
+    mutate(Model = "Unadjusted"),
+  tidy(model_practice_adjusted, conf.int = TRUE) %>%
+    filter(term == "stress_level") %>%
+    mutate(Model = "Adjusted")
+) %>%
+  select(Model, estimate, conf.low, conf.high, p.value)
+
+print(comparison_practice)
+
+# Forest plot
+ggplot(comparison_practice, aes(x = Model, y = estimate, color = Model)) +
+  geom_point(size = 4) +
+  geom_errorbar(
+    aes(ymin = conf.low, ymax = conf.high),
+    width = 0.2,
+    linewidth = 1
+  ) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(
+    title = "Effect of Stress Level on Sleep Duration",
+    y = "Change in Sleep Duration (hours per 1-unit increase in stress)"
+  ) +
+  theme_minimal() +
+  scale_color_brewer(palette = "Set1") +
+  theme(legend.position = "none")
+```
+
+**Interpretation:** After adjusting for age, physical activity, and
+occupation, each 1-point increase in stress level was associated with a
+`r round(tidy(model_practice_adjusted, conf.int = TRUE) %>% filter(term == "stress_level") %>% pull(estimate), 2)`
+hour change in sleep duration (95% CI:
+`r round(tidy(model_practice_adjusted, conf.int = TRUE) %>% filter(term == "stress_level") %>% pull(conf.low), 2)`
+to
+`r round(tidy(model_practice_adjusted, conf.int = TRUE) %>% filter(term == "stress_level") %>% pull(conf.high), 2)`).
+
+If you included a categorical predictor such as `Occupation`, each
+Occupation coefficient would be interpreted as the mean difference in
+sleep duration compared with the chosen reference occupation, holding
+the other variables constant.
+
+</details>
+
+------------------------------------------------------------------------
+
+# Part 6: Key Takeaways & Resources
+
+## 6.1 Key Takeaways
+
+**Concepts:**
+
+-   Identify X (exposure), Y (outcome), and confounders
+-   Understand how confounding distorts relationships
+-   Use regression to adjust for confounders
+-   Interpret continuous predictors as changes per unit increase
+-   Interpret categorical predictors relative to a reference group
+
+**Skills:**
+
+-   Explore data and visualize relationships
+-   Fit and interpret regression models in R
+-   Compare crude vs. adjusted estimates
+-   Interpret categorical variables in linear, logistic, and Poisson
+    models
+-   Create tables and communicate findings
+
+------------------------------------------------------------------------
+
+## 6.2 Common Pitfalls to Avoid
+
+```{r pitfalls, echo=FALSE}
+pitfalls <- tibble(
+  Pitfall = c(
+    "Assuming correlation = causation",
+    "Not checking for confounding",
+    "Ignoring reference categories",
+    "P-hacking",
+    "Not considering unmeasured confounding"
+  ),
+  Description = c(
+    "An observed association doesn't prove causation",
+    "Failing to identify and adjust for confounders",
+    "Misinterpreting categorical variable coefficients",
+    "Running many models and only reporting significant results",
+    "Assuming all confounders are measured and included"
+  ),
+  `How to Avoid` = c(
+    "Be cautious in causal language; consider study design",
+    "Always note which category is the reference (e.g., Female, Normal Weight)",
+    "Pre-specify your analysis plan; report all models tested",
+    "Acknowledge limitations in your discussion"
+  )
+)
+
+print(pitfalls)
+```
+
+------------------------------------------------------------------------
+
+# Appendix: Quick R Reference
+
+```{r cheatsheet, eval=FALSE}
+# Fit regression
+model <- lm(y ~ x1 + x2, data = data)
+
+# View results
+summary(model)                    # Full output
+tidy(model, conf.int = TRUE)      # Clean table (broom)
+glance(model)                     # Model fit stats
+
+# Diagnostics
+plot(model)                       # Check assumptions
+
+# Set a reference category for a factor
+data$group <- forcats::fct_relevel(data$group, "Reference Level")
+
+# Logistic or Poisson: exponentiate for OR / IRR
+tidy(model, conf.int = TRUE, exponentiate = TRUE)
+```
+
+------------------------------------------------------------------------
+
+## Session Info
+
+```{r session-info}
+sessionInfo()
+```
