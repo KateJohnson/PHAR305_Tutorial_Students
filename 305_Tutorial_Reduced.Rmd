@@ -1,0 +1,738 @@
+---
+title: "PHAR 305 Final Project"
+author: "Your Name Here"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: flatly
+    highlight: tango
+    code_folding: show
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 8,
+  fig.height = 6
+)
+
+# Load required packages
+library(tidyverse)  # for ggplot2
+library(broom)      # for tidy()
+library(knitr)      # for kable()
+```
+
+------------------------------------------------------------------------
+
+# Instructions
+
+## Rename this file
+
+Replace "lastname_firstname" in the file name with your own last and
+first name before beginning the project (e.g.,
+Doe_Jane_PHAR305_finalproject.Rmd). The same naming convention will
+automatically apply when you knit this file to HTML.
+
+## Overview
+
+This project will assess your understanding of how to formulate and test
+a scientific research question, conduct and interpret a regression
+analysis, and contextualize your research findings. You will apply these
+concepts to a dataset of your choice.
+
+**Total Points: 60**
+
+Deadline to submit knit HTML and RMD files on Canvas: April 7, 2026 at
+11:59 PM
+
+## Requirements
+
+1.  **Choose ONE dataset** from the options provided on Canvas
+2.  Complete ALL sections of this analysis template
+3.  Show all code and provide written interpretations
+4.  Knit your final document to HTML before submitting
+
+## Grading Criteria
+
+| Section | Topic                          | Points |
+|---------|--------------------------------|--------|
+| Part 0  | Dataset Identified             | 1      |
+| Part 1  | Research Question & Hypotheses | 11     |
+| Part 2  | Data Exploration               | 13     |
+| Part 3  | Regression Analysis            | 15     |
+| Part 4  | Communicating Results          | 6      |
+| Part 5  | Limitations & Interpretation   | 6      |
+| Overall | RMD Rendered Successfully      | 3      |
+| Overall | Code readability               | 5      |
+| Total   |                                | 60     |
+
+------------------------------------------------------------------------
+
+# Your Dataset Selection (/1 point)
+
+**Provide the name of your chosen dataset**
+
+*Your answer:*
+
+------------------------------------------------------------------------
+
+# Part 1: Research Question & Hypotheses (/11 points)
+
+## 1.1 Load Your Dataset (1 point)
+
+Load your chosen dataset.
+
+```{r load-data}
+# Load the Sleep Health and Lifestyle dataset
+# Using read_csv() from the readr package (part of tidyverse)
+data <- read_csv("Sleep_health_and_lifestyle_dataset.csv")
+
+# Quick look at the raw data
+head(data)
+```
+
+```{r rename-columns}
+# This step is optional - consider whether you variables are already user friendly
+# Rename columns to shorter, informative, code-friendly names with no spaces (which can cause errors)
+# Using rename() from the dplyr package (part of tidyverse)
+data <- rename(data,
+  person_id         = "Person ID",
+  sleep_duration    = "Sleep Duration",
+  quality_of_sleep  = "Quality of Sleep",
+  physical_activity = "Physical Activity Level",
+  stress_level      = "Stress Level",
+  bmi_category      = "BMI Category",
+  blood_pressure    = "Blood Pressure",
+  heart_rate        = "Heart Rate",
+  daily_steps       = "Daily Steps",
+  sleep_disorder    = "Sleep Disorder",
+  Sex               = "Gender"
+)
+```
+
+```{r clean-data}
+# This step is optional - consider whether you need to recategorize any variables or set the reference category for categorical variables. If you if you don't specify, R will chose the first category in alphabetical order as the reference.
+# Clean and create new variables for analysis
+
+# Clean up BMI: merge "Normal" and "Normal Weight" into one level
+data$bmi_category <- trimws(data$bmi_category)
+data$bmi_category[data$bmi_category == "Normal"] <- "Normal Weight"
+
+# Set reference categories for factor variables
+data$Sex <- relevel(factor(data$Sex), ref = "Female")
+data$bmi_category <- relevel(factor(data$bmi_category), ref = "Normal Weight")
+data$sleep_disorder <- relevel(factor(data$sleep_disorder), ref = "None")
+
+# Create a binary variable for sleep disorder (for logistic regression)
+data$has_disorder <- ifelse(data$sleep_disorder != "None", 1, 0)
+
+# Scale daily steps to thousands (for Poisson regression)
+data$steps_thousands <- round(data$daily_steps / 1000)
+
+# Verify the cleaned data
+head(data)
+```
+
+## 1.2 Define Your Research Question (8 points)
+
+Based on your chosen dataset, formulate a research question using the
+PICO framework (5 points):
+
+**Population**
+
+*Your answer:*
+
+**Intervention**
+
+*Your answer:*
+
+**Comparator**
+
+*Your answer:*
+
+**Outcome**
+
+*Your answer:*
+
+**Your Research Question (1 sentence)**
+
+*Your answer:*
+
+Now, identify the variables **in your dataset** that will allow you to
+test this research question (3 points):
+
+**Outcome (Y)** *What is your dependent variable?*
+
+*Your answer:*
+
+**Exposure (X)** *What is your main predictor of interest?*
+
+*Your answer:*
+
+**List 2-3 potential confounders for the X-Y relationship**
+
+*Your answer:*
+
+## 1.3 Justify Your Confounders (2 points)
+
+For each confounder you identified, provide a 2-3 sentence conceptual
+justification based on the definition of a confounder that we learned in
+class. Include at least one reference to a published study to support
+your justification for each confounder.
+
+*Tip:* You can cite studies within markdown by including a URL, for
+example: <https://pubmed.ncbi.nlm.nih.gov/>
+
+**Confounder justification**
+
+*Your answer:*
+
+------------------------------------------------------------------------
+
+# Part 2: Data Exploration (/13 points)
+
+## 2.1 Summary Statistics (4 points)
+
+Provide at least one informative summary statistic for each of your key
+variables (outcome, exposure, and each of your confounders identified in
+Section 1.2).
+
+```{r summary-outcome}
+# Summary statistics for the outcome variable (Quality of Sleep)
+summary(data$quality_of_sleep)
+sd(data$quality_of_sleep)
+```
+
+```{r summary-exposure}
+# Summary statistics for the exposure variable (Physical Activity Level)
+summary(data$physical_activity)
+sd(data$physical_activity)
+```
+
+```{r summary-confounder-age}
+# Confounder 1: Age (continuous)
+summary(data$Age)
+sd(data$Age)
+```
+
+```{r summary-confounder-stress}
+# Confounder 2: Stress Level (continuous)
+summary(data$stress_level)
+sd(data$stress_level)
+```
+
+```{r summary-confounder-sex}
+# Confounder 3: Sex (categorical — show counts and proportions)
+table(data$Sex)
+prop.table(table(data$Sex))
+```
+
+## 2.2 Distribution of Outcome Variable (3 points)
+
+Create a visualization showing the distribution of your outcome
+variable.
+
+**Tip: See lecture notes from Sessions 10/11 for suggestions of
+appropriate visualizations for categorical variables (e.g. bar chart)**
+
+```{r outcome-distribution}
+# Histogram of the outcome variable: Quality of Sleep
+# Using ggplot() from the ggplot2 package (part of tidyverse)
+
+ggplot(data, aes(x = quality_of_sleep)) +       # set up the plot; aes() maps the variable to the x-axis
+  geom_histogram(bins = 10, fill = "steelblue",  # draw histogram bars with 10 bins
+                 alpha = 0.7, color = "white") +  # alpha = transparency, color = bar border
+  labs(                                           # add labels for the title and axes
+    title = "Distribution of Quality of Sleep",
+    x = "Quality of Sleep (1–10)",
+    y = "Count"
+  ) +
+  theme_minimal()                                 # apply a clean, minimal theme
+```
+
+**Interpretation**
+
+Describe the distribution of your outcome variable (e.g., shape, central
+tendency, spread) in 2-3 sentences.
+
+*Your answer:*
+
+------------------------------------------------------------------------
+
+## 2.3 Exposure-Outcome Relationship (3 points)
+
+Create a visualization showing the relationship between your exposure
+and outcome.
+
+```{r exposure-outcome-plot}
+# Scatterplot: Physical Activity (X) vs. Quality of Sleep (Y)
+# Using ggplot() from the ggplot2 package (part of tidyverse)
+
+ggplot(data, aes(x = physical_activity, y = quality_of_sleep)) +  # set up plot; map X and Y variables
+  geom_point(alpha = 0.5, color = "steelblue") +                  # draw individual data points
+  geom_smooth(method = "lm", se = TRUE, color = "red") +          # add a linear trend line with 95% CI shading
+  labs(                                                            # add labels for title and axes
+    title = "Physical Activity vs. Quality of Sleep",
+    x = "Physical Activity Level (min/day)",
+    y = "Quality of Sleep (1–10)"
+  ) +
+  theme_minimal()                                                  # apply a clean, minimal theme
+```
+
+**Interpretation**
+
+Describe the crude (unadjusted) relationship you observe between
+exposure and outcome in 3-4 sentences.
+
+*Your answer:*
+
+------------------------------------------------------------------------
+
+## 2.4 Exploring Potential Confounding (3 points)
+
+Show evidence that at least one of your confounders is associated with
+BOTH the exposure and the outcome.
+
+```{r confounder-vs-exposure}
+# Plot 1: Confounder (Stress) vs. Exposure (Physical Activity)
+# Using ggplot() from the ggplot2 package (part of tidyverse)
+
+ggplot(data, aes(x = stress_level, y = physical_activity)) +  # set up plot; map X and Y variables
+  geom_point(alpha = 0.5, color = "darkorange") +              # draw individual data points
+  geom_smooth(method = "lm", se = TRUE, color = "red") +      # add a linear trend line with 95% CI shading
+  labs(                                                        # add labels for title and axes
+    title = "Stress Level vs. Physical Activity",
+    x = "Stress Level (1–10)",
+    y = "Physical Activity (min/day)"
+  ) +
+  theme_minimal()                                              # apply a clean, minimal theme
+```
+
+```{r confounder-vs-outcome}
+# Plot 2: Confounder (Stress) vs. Outcome (Quality of Sleep)
+# Using ggplot() from the ggplot2 package (part of tidyverse)
+
+ggplot(data, aes(x = stress_level, y = quality_of_sleep)) +  # set up plot; map X and Y variables
+  geom_point(alpha = 0.5, color = "purple") +                 # draw individual data points
+  geom_smooth(method = "lm", se = TRUE, color = "red") +     # add a linear trend line with 95% CI shading
+  labs(                                                       # add labels for title and axes
+    title = "Stress Level vs. Quality of Sleep",
+    x = "Stress Level (1–10)",
+    y = "Quality of Sleep (1–10)"
+  ) +
+  theme_minimal()                                             # apply a clean, minimal theme
+```
+
+**Interpretation**
+
+Explain how this evidence supports that this variable could be a
+confounder in 3-5 sentences.
+
+**Tip: Remember that a lack of clear evidence of an association with the
+exposure/outcome in your visualization or summary table does NOT mean
+that the variable is not a confounder, only that your particular
+analysis may not provide strong evidence of a relationship. See Session
+4 `Confounding_Summary.pdf`for a reminder of the importance of the
+conceptual definition over the numeric/visual demonstration of
+confounding in your dataset, which may be misleading.**
+
+*Your answer:*
+
+------------------------------------------------------------------------
+
+# Part 3: Regression Analysis (/15 points)
+
+## 3.1 Choose the Appropriate Regression Model (2 points)
+
+Based on your outcome variable, select the appropriate regression model:
+
+**a) What type of outcome variable do you have? (1 sentence)**
+
+*Your answer:*
+
+**b) Which regression model will you use and why? (2-3 sentences)**
+
+*Your answer:*
+
+## 3.2 Unadjusted (Simple) Regression (4 points)
+
+**Tip: We provide code for linear, logistic and poisson models. Choose
+only ONE type of model that corresponds with your outcome variable
+type.**
+
+Fit a simple regression model with only your exposure variable as the
+predictor. Use the appropriate model type based on your answer above.
+
+```{r simple-linear-fit}
+# ---- LINEAR REGRESSION (continuous outcome: quality_of_sleep) ----
+# Simple model: outcome ~ exposure only
+
+model_simple_linear <- lm(quality_of_sleep ~ physical_activity, data = data)
+```
+
+```{r simple-linear-results}
+# Using tidy() from the broom package
+# tidy() converts model output into a clean data frame with one row per coefficient
+
+tidy_simple_linear <- tidy(model_simple_linear, conf.int = TRUE)
+tidy_simple_linear[, sapply(tidy_simple_linear, is.numeric)] <-
+  round(tidy_simple_linear[, sapply(tidy_simple_linear, is.numeric)], 3)
+
+print(tidy_simple_linear)
+```
+
+```{r simple-logistic-fit}
+# ---- LOGISTIC REGRESSION (binary outcome: has_disorder) ----
+# Simple model: does physical activity predict having a sleep disorder?
+model_simple_logistic <- glm(
+  has_disorder ~ physical_activity,
+  data = data,
+  family = binomial
+)
+```
+
+```{r simple-logistic-results}
+# Using tidy() from the broom package
+# tidy() converts model output into a clean data frame with one row per coefficient
+# exponentiate = TRUE transforms log-odds into Odds Ratios (OR)
+tidy_simple_logistic <- tidy(model_simple_logistic, conf.int = TRUE, exponentiate = TRUE)
+tidy_simple_logistic[, sapply(tidy_simple_logistic, is.numeric)] <-
+  round(tidy_simple_logistic[, sapply(tidy_simple_logistic, is.numeric)], 3)
+
+print(tidy_simple_logistic)
+```
+
+```{r simple-poisson-fit}
+# ---- POISSON REGRESSION (count outcome: steps_thousands) ----
+# Simple model: does physical activity predict daily step count?
+model_simple_poisson <- glm(
+  steps_thousands ~ physical_activity,
+  data = data,
+  family = poisson
+)
+```
+
+```{r simple-poisson-results}
+# Using tidy() from the broom package
+# tidy() converts model output into a clean data frame with one row per coefficient
+# exponentiate = TRUE transforms log-counts into Incidence Rate Ratios (IRR)
+tidy_simple_poisson <- tidy(model_simple_poisson, conf.int = TRUE, exponentiate = TRUE)
+tidy_simple_poisson[, sapply(tidy_simple_poisson, is.numeric)] <-
+  round(tidy_simple_poisson[, sapply(tidy_simple_poisson, is.numeric)], 3)
+
+print(tidy_simple_poisson)
+```
+
+**Interpretation of Exposure Effect**
+
+Identify and interpret the appropriate coefficient in the context of
+your research question (2-3 sentences).
+
+*Your answer:*
+
+Is this association statistically significant? Interpret the confidence
+interval AND p-value (1-2 sentences).
+
+*Your answer:*
+
+## 3.3 Adjusted (Multiple) Regression (4 points)
+
+Fit a multiple regression model adjusting for your confounders selected
+in Section 1.2. Use the same model type as above.
+
+```{r adj-linear-fit}
+# ---- ADJUSTED LINEAR REGRESSION ----
+# Add confounders: Age, Sex, stress_level
+model_adj_linear <- lm(
+  quality_of_sleep ~ physical_activity + Age + Sex + stress_level,
+  data = data
+)
+```
+
+```{r adj-linear-results}
+# Using tidy() from the broom package
+# tidy() converts model output into a clean data frame with one row per coefficient
+tidy_adj_linear <- tidy(model_adj_linear, conf.int = TRUE)
+tidy_adj_linear[, sapply(tidy_adj_linear, is.numeric)] <-
+  round(tidy_adj_linear[, sapply(tidy_adj_linear, is.numeric)], 3)
+
+print(tidy_adj_linear)
+```
+
+```{r adj-logistic-fit}
+# ---- ADJUSTED LOGISTIC REGRESSION ----
+# Add confounders to the logistic model
+model_adj_logistic <- glm(
+  has_disorder ~ physical_activity + Age + Sex + stress_level,
+  data = data,
+  family = binomial
+)
+```
+
+```{r adj-logistic-results}
+# Using tidy() from the broom package
+# tidy() converts model output into a clean data frame with one row per coefficient
+# exponentiate = TRUE transforms log-odds into Odds Ratios (OR)
+tidy_adj_logistic <- tidy(model_adj_logistic, conf.int = TRUE, exponentiate = TRUE)
+tidy_adj_logistic[, sapply(tidy_adj_logistic, is.numeric)] <-
+  round(tidy_adj_logistic[, sapply(tidy_adj_logistic, is.numeric)], 3)
+
+print(tidy_adj_logistic)
+```
+
+```{r adj-poisson-fit}
+# ---- ADJUSTED POISSON REGRESSION ----
+# Add confounders to the Poisson model
+model_adj_poisson <- glm(
+  steps_thousands ~ physical_activity + Age + Sex + stress_level,
+  data = data,
+  family = poisson
+)
+```
+
+```{r adj-poisson-results}
+# Using tidy() from the broom package
+# tidy() converts model output into a clean data frame with one row per coefficient
+# exponentiate = TRUE transforms log-counts into Incidence Rate Ratios (IRR)
+tidy_adj_poisson <- tidy(model_adj_poisson, conf.int = TRUE, exponentiate = TRUE)
+tidy_adj_poisson[, sapply(tidy_adj_poisson, is.numeric)] <-
+  round(tidy_adj_poisson[, sapply(tidy_adj_poisson, is.numeric)], 3)
+
+print(tidy_adj_poisson)
+```
+
+**Interpretation of Exposure Effect after adjusting for confounders**
+
+Identify and interpret the appropriate coefficient in the context of
+your research question (2-3 sentences).
+
+*Your answer:*
+
+Is this association statistically significant? Interpret the confidence
+interval AND p-value (1-2 sentences).
+
+*Your answer:*
+
+## 3.4 Compare Unadjusted vs. Adjusted Estimates (5 points)
+
+Create a numeric AND visual comparison of your unadjusted and adjusted
+estimates for the exposure variable.
+
+```{r compare-linear}
+# Extract the physical_activity coefficient from unadjusted vs adjusted linear models
+
+unadj_lin <- subset(tidy_simple_linear, term == "physical_activity")
+unadj_lin$Model <- "Linear – Unadjusted"
+
+adj_lin <- subset(tidy_adj_linear, term == "physical_activity")
+adj_lin$Model <- "Linear – Adjusted"
+
+compare_linear <- rbind(unadj_lin, adj_lin)
+print(compare_linear)
+```
+
+```{r compare-logistic}
+# Extract the physical_activity coefficient from unadjusted vs adjusted logistic models
+
+unadj_log <- subset(tidy_simple_logistic, term == "physical_activity")
+unadj_log$Model <- "Logistic – Unadjusted"
+
+adj_log <- subset(tidy_adj_logistic, term == "physical_activity")
+adj_log$Model <- "Logistic – Adjusted"
+
+compare_logistic <- rbind(unadj_log, adj_log)
+print(compare_logistic)
+```
+
+```{r compare-poisson}
+# Extract the physical_activity coefficient from unadjusted vs adjusted Poisson models
+
+unadj_pois <- subset(tidy_simple_poisson, term == "physical_activity")
+unadj_pois$Model <- "Poisson – Unadjusted"
+
+adj_pois <- subset(tidy_adj_poisson, term == "physical_activity")
+adj_pois$Model <- "Poisson – Adjusted"
+
+compare_poisson <- rbind(unadj_pois, adj_pois)
+print(compare_poisson)
+```
+
+```{r compare-table}
+# Combine all into one comparison table
+
+comparison_table <- rbind(compare_linear, compare_logistic, compare_poisson)
+comparison_table <- comparison_table[, c("Model", "estimate", "conf.low", "conf.high", "p.value")]
+
+print(comparison_table)
+```
+
+```{r compare-plot-data}
+# Add columns for faceting and labelling the forest plot
+
+comparison_table$Family <- ifelse(grepl("Linear", comparison_table$Model), "Linear (Coefficient)",
+                           ifelse(grepl("Logistic", comparison_table$Model), "Logistic (Odds Ratio)",
+                                  "Poisson (IRR)"))
+
+comparison_table$Type <- ifelse(grepl("Unadjusted", comparison_table$Model), "Unadjusted", "Adjusted")
+```
+
+```{r compare-forest-plot}
+# Forest plot: Unadjusted vs Adjusted estimates with 95% CI
+# Using ggplot() from the ggplot2 package (part of tidyverse)
+ggplot(comparison_table, aes(x = estimate, y = Type, colour = Type)) +  # set up plot; map estimate to x, model type to y
+  geom_point(size = 3) +                                                 # draw point estimates
+  geom_errorbar(aes(xmin = conf.low, xmax = conf.high), height = 0.2) + # draw horizontal 95% CI bars
+  facet_wrap(~ Family, scales = "free_x") +                              # create separate panels for each regression type
+  labs(                                                                   # add labels for title and axes
+    title = "Forest Plot: Effect of Physical Activity",
+    subtitle = "Unadjusted vs Adjusted Estimates with 95% CI",
+    x = "Estimate",
+    y = NULL,
+    colour = "Model"
+  ) +
+  theme_minimal() +                                                      # apply a clean, minimal theme
+  theme(legend.position = "bottom")                                      # move legend to the bottom
+```
+
+**Analysis of Confounding**
+
+How did the inclusion of confounders change the coefficient for your
+exposure after adjustment? In your answer, describe the direction the
+coefficient changed (toward or away from the null effect), and whether
+your conclusion about statistical significance was affected (4-5
+sentences).
+
+*Your answer:*
+
+------------------------------------------------------------------------
+
+# Part 4: Communicating Results (/6 points)
+
+## 4.1 Publication-Ready Table (2 points)
+
+Create a professional results table for your adjusted regression model.
+
+```{r pub-table-format}
+# Format the adjusted linear model results for a journal-style table
+
+pub_table <- tidy_adj_linear
+
+# Create readable variable names
+pub_table$Variable <- pub_table$term
+pub_table$Variable[pub_table$term == "(Intercept)"]       <- "Intercept"
+pub_table$Variable[pub_table$term == "physical_activity"] <- "Physical Activity Level"
+pub_table$Variable[pub_table$term == "Age"]               <- "Age (years)"
+pub_table$Variable[pub_table$term == "SexMale"]           <- "Sex (Male vs Female)"
+pub_table$Variable[pub_table$term == "stress_level"]      <- "Stress Level"
+
+# Paste confidence interval into one column
+pub_table$CI <- paste0("(", pub_table$conf.low, ", ", pub_table$conf.high, ")")
+
+# Format p-value
+pub_table$P_value <- ifelse(pub_table$p.value < 0.001, "< 0.001", round(pub_table$p.value, 3))
+
+# Keep only the columns we need
+pub_table <- pub_table[, c("Variable", "estimate", "CI", "P_value")]
+colnames(pub_table) <- c("Variable", "Estimate", "95% CI", "P-value")
+```
+
+```{r pub-table-display}
+# Display as a nicely formatted table
+# Using kable() from the knitr package
+
+kable(pub_table, caption = "Table 1. Adjusted Linear Regression Results – Predictors of Sleep Quality")
+```
+
+## 4.2 Written Results Statement (4 points)
+
+Write a 5-7 sentence results paragraph suitable for a research paper.
+Your statement should include:
+
+-   The research question addressed
+-   The adjusted effect estimate with units
+-   The 95% confidence interval
+-   Whether the effect is statistically significant
+-   The confounders that were controlled for and how they impacted the
+    effect estimate
+
+**Results**
+
+*Your answer:*
+
+------------------------------------------------------------------------
+
+# Part 5: Limitations & Interpretation (/6 points)
+
+## 5.1 Limitations (3 points)
+
+Discuss THREE limitations of your dataset or analysis. These could
+include unmeasured confounding variables, measurement bias in data
+collection, selection bias in study design, lack of external validity,
+limitations in the statistical analysis, etc.
+
+**Limitation 1**
+
+Describe and explain the potential impact on results in 2-3 sentences.
+
+*Your answer:*
+
+**Limitation 2**
+
+Describe and explain the potential impact on results in 2-3 sentences.
+
+*Your answer:*
+
+**Limitation 3**
+
+Describe and explain the potential impact on results in 2-3 sentences.
+
+*Your answer:*
+
+## 5.2 Interpretation (3 points)
+
+What is your conclusion on whether your exposure causes the outcome?
+Provide an informative answer based on your response to Sections 4.2 and
+5.1; do not simply state that correlation does not equal causation.
+Incorporate your assessment of the strengths and weaknesses of your
+dataset and/or analysis. Answer in 4-5 sentences.
+
+**Interpretation**
+
+*Your answer:*
+
+------------------------------------------------------------------------
+
+# Submission Checklist
+
+Before submitting, verify that you have the following, successfully
+rendered in HTML format:
+
+-   [ ] Selected and loaded ONE dataset
+-   [ ] Stated a clear research question with PICO, X, Y, and
+    confounders
+-   [ ] Justified why your confounders could affect both X and Y
+-   [ ] Created summary statistics and visualizations
+-   [ ] Fit an unadjusted (simple) regression model
+-   [ ] Fit an adjusted (multiple) regression model
+-   [ ] Compared unadjusted vs. adjusted estimates
+-   [ ] Created a publication-ready table
+-   [ ] Written a results statement
+-   [ ] Discussed limitations and interpretation
+-   [ ] Replaced "Your Name Here" with your actual name
+-   [ ] Successfully knitted the document to HTML
+
+------------------------------------------------------------------------
+
+## Session Info
+
+```{r session-info}
+sessionInfo()
+```
